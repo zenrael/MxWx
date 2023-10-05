@@ -58,6 +58,8 @@ class Wx {
         };
         struct forecast {
             std::vector<double> precProb;
+            std::string dailyWx = "0";
+            std::string nightlyWx = "0";
         };
         observations obs;
         forecast fcst;
@@ -79,6 +81,17 @@ class Wx {
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
             CURLcode res = curl_easy_perform(curl);
+
+            bool parseSuccess = reader.parse(readBuffer, root, false);
+            if (parseSuccess) {
+                //std::cout << root["SiteRep"]["DV"]["Location"]["Period"][0]["Rep"][0]["W"].asString() << std::endl;
+                this->fcst.dailyWx = root["SiteRep"]["DV"]["Location"]["Period"][0]["Rep"][0]["W"].asString();
+                //std::cout << this->fcst.dailyWx << std::endl;
+                this->fcst.nightlyWx = root["SiteRep"]["DV"]["Location"]["Period"][0]["Rep"][1]["W"].asString();
+                //std::cout << this->fcst.nightlyWx << std::endl;
+            }
+
+            return 0;
         }
 
         int Update3Hourly() {
@@ -224,8 +237,8 @@ void LoadIcons() {
     WxIcons[30] = new Icon("Thunder", 30, path + "chancetstorms.png");
 }
 
-void CopyImageToCanvas(const Magick::Image &image, Canvas *canvas) {
-    const int offset_x = 0, offset_y = 0;
+void CopyImageToCanvas(const Magick::Image &image, Canvas *canvas, int x_pos = 0, int y_pos = 0) {
+    const int offset_x = x_pos, offset_y = y_pos;
     // Copy all pixels to the canvas.
     for (size_t y = 0; y < image.rows(); ++y) {
         for (size_t x = 0; x < image.columns(); ++x) {
@@ -268,39 +281,48 @@ int main(int argc, char *argv[]) {
 
     // Lets have a go at loading some fonts...
     rgb_matrix::Font font;
-    if (!font.LoadFont("matrix/fonts/7x13B.bdf")) {
+    if (!font.LoadFont("matrix/fonts/4x6.bdf")) {
         std::cout << "BDF not loading?" << std::endl;
         return 1;
     }
 
     Wx Weather;
     Weather.UpdateObs();
+    Weather.UpdateDaily();
     Weather.Update3Hourly();
     LoadIcons();
     
     while (!interrupt_received) {
         // Remember to clear the canvas 
+        matrix->Clear();
 
-        CopyImageToCanvas(WxIcons[std::stoi(Weather.obs.currentWx)]->image, matrix);
+        CopyImageToCanvas(WxIcons[std::stoi(Weather.obs.currentWx)]->image, matrix, 0, 0);
+        if((360 < stoi(Weather.obs.obsTime)) && (stoi(Weather.obs.obsTime) < 1080)) {
+            CopyImageToCanvas(WxIcons[std::stoi(Weather.fcst.dailyWx)]->image, matrix, 48, 0);
+        } else {
+            CopyImageToCanvas(WxIcons[std::stoi(Weather.fcst.nightlyWx)]->image, matrix, 48, 0);
+        }
 
         rgb_matrix::Color colour(0,0,255);
+        // Size of screenTemp should not exceed 4, but could be 3. 
         rgb_matrix::DrawText(matrix, font, 18, 4 + font.baseline(), colour, NULL, Weather.obs.screenTemp.c_str(), 1);
 
         int t_period = 0;
         for (double prob : Weather.fcst.precProb) {
             int probPixels = (int)std::round((16.00/100.00)*prob);
             for(int x = 0; x <= 2 ; x++) {
-                for(int y = 31; y >= (31-probPixels); y--) {
-                    matrix->SetPixel(t_period + x, y, 0, 0, 255);
+                for(int y = 31; y >= (32-probPixels); y--) {
+                    matrix->SetPixel(t_period + x, y, 0, 0, 160);
                 }
             }
-            for(int y = 31; y >= 28 ; y--) {
-                matrix->SetPixel(t_period + 3, y, 255, 255, 0);
+            for(int y = 31; y >= 30 ; y--) {
+                matrix->SetPixel(t_period + 3, y, 128, 128, 0);
             }
             t_period=t_period+4;
         }
         sleep(300);
         Weather.UpdateObs();
+        Weather.UpdateDaily();
         Weather.Update3Hourly();
     }
 

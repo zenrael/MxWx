@@ -39,7 +39,7 @@ class Wx {
     // ALSO BUT NOT IMMEDIATELY IMPORTANT:
     //      pres history, last 24 hours
     // AND ALSO:
-    //      forecast rain for next 24 hours <- impossible coz the met suck wanks
+    //      forecast rain for next 24 hours <- impossible coz the met
     //      forecast temp for next 24 hours <- also apparently impossible
     private:
         std::string readBuffer;

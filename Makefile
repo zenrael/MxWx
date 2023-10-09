@@ -1,5 +1,5 @@
 CXXFLAGS=-Wall -O3 -g
-OBJECTS=mxwx.o
+OBJECTS=mxwx.o wx.o
 BINARIES=mxwx
 
 RGB_LIB_DISTRIBUTION=matrix
@@ -22,20 +22,14 @@ all : mxwx
 $(RGB_LIBRARY): FORCE
 	$(MAKE) -C $(RGB_LIBDIR)
 
-mxwx : mxwx.o $(RGB_LIBRARY)
+mxwx : $(OBJECTS) $(RGB_LIBRARY)
 	$(CXX) $(CXXFLAGS) $(OBJECTS) -o $@ $(LDFLAGS) $(MAGICK_LDFLAGS)
 
-mxwx.o : mxwx.cc
-	$(CXX) -I$(RGB_INCDIR) $(CXXFLAGS) $(MAGICK_CXXFLAGS) -c -o $@ $<
-
-# matrix-new : matrix-new.o $(RGB_LIBRARY)
-# 	$(CXX) $(CXXFLAGS) $(OBJECTS) -o $@ $(LDFLAGS) $(MAGICK_LDFLAGS)
-
-# matrix-new.o : matrix-new.cc
+# mxwx.o : mxwx.cc
 # 	$(CXX) -I$(RGB_INCDIR) $(CXXFLAGS) $(MAGICK_CXXFLAGS) -c -o $@ $<
 
 %.o : %.cc
-	$(CXX) -I$(RGB_INCDIR) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) -I$(RGB_INCDIR) $(CXXFLAGS) $(MAGICK_CXXFLAGS) -c -o $@ $<
 
 clean:
 	rm -f $(OBJECTS) $(BINARIES)

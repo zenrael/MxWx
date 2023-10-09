@@ -1,3 +1,5 @@
+#include "wx.h"
+
 #include "./matrix/include/led-matrix.h"
 // For obvious reasons of matrix magic
 
@@ -27,155 +29,7 @@ using rgb_matrix::RGBMatrix;
 using rgb_matrix::Canvas;
 using Magick::Image;
 
-class Wx {
-    // THINGS WOT I NEED TO STORE:
-    //      current temp
-    //      current wind
-    //      current dew point
-    //      current WX
-    //      current rain?
-    //      current pres
-    //      current whatever else
-    // ALSO BUT NOT IMMEDIATELY IMPORTANT:
-    //      pres history, last 24 hours
-    // AND ALSO:
-    //      forecast rain for next 24 hours <- impossible coz the met
-    //      forecast temp for next 24 hours <- also apparently impossible
-    private:
-        std::string readBuffer;
 
-    public:
-        struct observations {
-            std::string currentWx = "1";
-            std::string screenTemp = "0";
-            std::string tempDew = "0";
-            std::string windSpeed = "0";
-            std::string windGusts = "0";
-            std::string hPa = "0";
-            std::string screenHumidity = "0";
-            std::string windDirection = "N";
-            std::string obsTime = "NOW";
-        };
-        struct forecast {
-            std::vector<double> precProb;
-            std::string dailyWx = "0";
-            std::string nightlyWx = "0";
-        };
-        observations obs;
-        forecast fcst;
-
-        static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp) {
-            ((std::string*)userp)->append((char*)contents, size * nmemb);
-            return size * nmemb;
-        }
-
-        int UpdateDaily() {
-            Json::Value root;
-            Json::Reader reader;
-            CURL *curl = curl_easy_init();
-
-            // Clear the buffer
-            readBuffer.clear();
-
-            curl_easy_setopt(curl, CURLOPT_URL,"http://datapoint.metoffice.gov.uk/public/data/val/wxfcs/all/json/353282?res=daily&key=376ded23-35ee-4e21-90a8-f4b678bf05d9");
-            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
-            CURLcode res = curl_easy_perform(curl);
-
-            bool parseSuccess = reader.parse(readBuffer, root, false);
-            if (parseSuccess) {
-                //std::cout << root["SiteRep"]["DV"]["Location"]["Period"][0]["Rep"][0]["W"].asString() << std::endl;
-                this->fcst.dailyWx = root["SiteRep"]["DV"]["Location"]["Period"][0]["Rep"][0]["W"].asString();
-                //std::cout << this->fcst.dailyWx << std::endl;
-                this->fcst.nightlyWx = root["SiteRep"]["DV"]["Location"]["Period"][0]["Rep"][1]["W"].asString();
-                //std::cout << this->fcst.nightlyWx << std::endl;
-            }
-
-            return 0;
-        }
-
-        int Update3Hourly() {
-            Json::Value root;
-            Json::Reader reader;
-            CURL *curl = curl_easy_init();
-
-            // Clear the buffer
-            readBuffer.clear();
-
-            curl_easy_setopt(curl, CURLOPT_URL, "http://datapoint.metoffice.gov.uk/public/data/val/wxfcs/all/json/353282?res=3hourly&key=376ded23-35ee-4e21-90a8-f4b678bf05d9");
-            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
-            CURLcode res = curl_easy_perform(curl);
-
-            bool parseSuccess = reader.parse(readBuffer, root, false);
-            if (parseSuccess) {
-                // All of the following may be using stuff that was added to C++ pretty recently, and isn't reflected in the RPI GCC yet.
-                // There is another way, though...
-                //
-                // // std::chrono::time_point<std::chrono::steady_clock, std::chrono::duration<float>> t_now = std::chrono::steady_clock::now();
-                // // std::chrono::time_point<std::chrono::steady_clock, std::chrono::duration<float>> t_midnight = std::chrono::floor<std::chrono::days>(t_now);
-                // // auto minutes = std::chrono::duration_cast<std::chrono::minutes>(t_now - t_midnight);
-
-                Json::Value period = root["SiteRep"]["DV"]["Location"]["Period"];
-                for(Json::Value rep : period[0]["Rep"]) {
-                    if ((std::stoi(this->obs.obsTime) - std::stoi(rep["$"].asString())) < 180) {
-                        this->fcst.precProb.push_back(std::stod(rep["Pp"].asString()));
-                    }
-                }
-                for(Json::Value rep : period[1]["Rep"]) {
-                    if (this->fcst.precProb.size() < 16) {
-                        this->fcst.precProb.push_back(std::stod(rep["Pp"].asString()));
-                    }
-                }
-                for(Json::Value rep : period[2]["Rep"]) {
-                    if (this->fcst.precProb.size() < 16) {
-                        this->fcst.precProb.push_back(std::stod(rep["Pp"].asString()));
-                    }
-                }
-                
-            }
-            return 0;
-        }
-
-        // 3hourly forecast http://datapoint.metoffice.gov.uk/public/data/val/wxfcs/all/json/353282?res=3hourly&key=376ded23-35ee-4e21-90a8-f4b678bf05d9
-
-        int UpdateObs() {
-            Json::Value root;
-            Json::Reader reader;
-            CURL *curl = curl_easy_init();
-
-            // Clear the buffer (?)
-            readBuffer.clear();
-
-            curl_easy_setopt(curl, CURLOPT_URL, "http://datapoint.metoffice.gov.uk/public/data/val/wxobs/all/json/3351?res=hourly&key=376ded23-35ee-4e21-90a8-f4b678bf05d9");
-            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
-            CURLcode res = curl_easy_perform(curl);
-
-            bool parseSuccess = reader.parse(readBuffer, root, false);
-            if (parseSuccess) {
-                int days = root["SiteRep"]["DV"]["Location"]["Period"].size();
-                int obs = root["SiteRep"]["DV"]["Location"]["Period"][days-1]["Rep"].size();
-                Json::Value latestObs = root["SiteRep"]["DV"]["Location"]["Period"][days-1]["Rep"][obs-1];
-                this->obs.currentWx = latestObs["W"].asString();
-                this->obs.screenTemp = latestObs["T"].asString();
-                this->obs.screenHumidity = latestObs["H"].asString();
-                this->obs.windSpeed = latestObs["S"].asString();
-                this->obs.windGusts = latestObs["G"].asString();
-                this->obs.windDirection = latestObs["D"].asString();
-                this->obs.hPa = latestObs["P"].asString();
-                this->obs.tempDew = latestObs["Dp"].asString();
-                this->obs.obsTime = latestObs["$"].asString();
-
-                std::cout << this->obs.obsTime << std::endl;
-                //std::cout << root["SiteRep"]["DV"]["Location"]["Period"] << std::endl;
-            }
-
-            curl_easy_cleanup(curl);
-            return 0;
-
-        }
-};
 
 class Icon {
     public:
@@ -193,6 +47,7 @@ class Icon {
             image.read(filename);
         }
 };
+
 std::map<int, Icon*> WxIcons;
 
 void LoadIcons() {
@@ -257,16 +112,15 @@ static void InterruptHandler(int signo) {
 }
 
 int main(int argc, char *argv[]) {
-    // CURL *curl;
-    // CURLcode result;
-    // std::string readBuffer;
-
-    //curl = curl_easy_init();
     signal(SIGTERM, InterruptHandler);
     signal(SIGINT, InterruptHandler);
 
     Magick::InitializeMagick(*argv);
     Magick::Image image;
+
+    rgb_matrix::Color fcastDayFontColour(153,76,96);
+    rgb_matrix::Color fcastNightFontColour(96,96,96);
+    rgb_matrix::Color obsTempFontColour(102,102,0);
 
     RGBMatrix::Options defaults;
     defaults.hardware_mapping = "regular";
@@ -296,30 +150,81 @@ int main(int argc, char *argv[]) {
         // Remember to clear the canvas 
         matrix->Clear();
 
-        CopyImageToCanvas(WxIcons[std::stoi(Weather.obs.currentWx)]->image, matrix, 0, 0);
-        if((360 < stoi(Weather.obs.obsTime)) && (stoi(Weather.obs.obsTime) < 1080)) {
+        std::cout << Weather.obsDataDate << std::endl;
+
+        CopyImageToCanvas(WxIcons[std::stoi(Weather.obReps.back().wxType)]->image, matrix, 0, 0);
+        if((360 < stoi(Weather.obReps.back().repTime)) && (stoi(Weather.obReps.back().repTime) < 1080)) {
             CopyImageToCanvas(WxIcons[std::stoi(Weather.fcst.dailyWx)]->image, matrix, 48, 0);
         } else {
             CopyImageToCanvas(WxIcons[std::stoi(Weather.fcst.nightlyWx)]->image, matrix, 48, 0);
         }
 
-        rgb_matrix::Color colour(0,0,255);
-        // Size of screenTemp should not exceed 4, but could be 3. 
-        rgb_matrix::DrawText(matrix, font, 18, 4 + font.baseline(), colour, NULL, Weather.obs.screenTemp.c_str(), 1);
+        int tempInt = std::stoi(Weather.obReps.back().temp);
+        std::string tempIntStr = std::to_string(tempInt);
+        rgb_matrix::DrawText(matrix, font, 17, 0 + font.baseline(), obsTempFontColour, NULL, tempIntStr.c_str(), 1);
 
-        int t_period = 0;
-        for (double prob : Weather.fcst.precProb) {
-            int probPixels = (int)std::round((16.00/100.00)*prob);
-            for(int x = 0; x <= 2 ; x++) {
-                for(int y = 31; y >= (32-probPixels); y--) {
-                    matrix->SetPixel(t_period + x, y, 0, 0, 160);
-                }
+        rgb_matrix::DrawText(matrix, font, 39, 0 + font.baseline(), fcastDayFontColour, NULL, Weather.fcst.dayMaximum.c_str(), 1);
+        rgb_matrix::DrawText(matrix, font, 39, 8 + font.baseline(), fcastNightFontColour, NULL, Weather.fcst.nightMinimum.c_str(), 1);
+
+        int startPeriod = 0;
+        for (int r = 0; r < Weather.fcst.reports.size(); r++) {
+            // Remembering that observations by the met are in order of most recent last
+            if(stoi(Weather.obReps.back().repTime) - stoi(Weather.fcst.reports[r].repTime) < 180) {
+                startPeriod = r;
+                break;
             }
-            for(int y = 31; y >= 30 ; y--) {
-                matrix->SetPixel(t_period + 3, y, 128, 128, 0);
-            }
-            t_period=t_period+4;
         }
+        int t_period = 0;
+        for (int r = startPeriod; r < (16 + startPeriod); r++) {
+            if(r <= Weather.fcst.reports.size()) {
+                int probPixels = (int)std::round((16.00/100.00)*stoi(Weather.fcst.reports[r].precProb));
+                for(int x = 0; x <= 2 ; x++) {
+                    for(int y = 31; y >= (32-probPixels); y--) {
+                        matrix->SetPixel(t_period + x, y, 0, 0, 160);
+                    }
+                }
+                if(stoi(Weather.fcst.reports[r].repTime) == 1260) {
+                    for(int y = 31; y >= 26; y--) {
+                        matrix->SetPixel(t_period + 3, y, 96,96,96);
+                    }
+                } else if (stoi(Weather.fcst.reports[r].repTime) == 540) {
+                    for(int y = 31; y >= 26; y--) {
+                        matrix->SetPixel(t_period + 3, y, 96, 96, 0);
+                    }
+                } else {
+                    for(int y = 31; y >= 30 ; y--) {
+                        matrix->SetPixel(t_period + 3, y, 96, 96, 0);
+                    }
+                }
+                t_period=t_period+4;
+            }
+        }
+
+        // Get min and max pressure over obs range
+        int minPres = stoi(Weather.obReps.front().pressure);
+        int maxPres = stoi(Weather.obReps.front().pressure);
+        for(Wx::observationReport rep : Weather.obReps) {
+            if(stoi(rep.pressure) < minPres) {
+                minPres = stoi(rep.pressure);
+            } else if(stoi(rep.pressure) > maxPres) {
+                maxPres = stoi(rep.pressure);
+            }
+        }
+        if(maxPres == minPres)
+            maxPres = minPres + 50;
+        for(Wx::observationReport rep : Weather.obReps) {
+            int x_pos = 20;
+            int y_pos = 20;
+            // Limits for pressure are about 925 and 1050
+            // There'll need to be some sanity checks here increase its out of bounds
+            //std::cout << rep.obsNumber << std::endl;
+            //std::cout << (int)std::round((16.00/(maxPres-minPres))*(stoi(rep.pressure)-minPres)) << std::endl;
+            if(maxPres - minPres < 10)
+                matrix->SetPixel(x_pos + rep.obsNumber, y_pos - (int)std::round(stoi(rep.pressure) - minPres), 64, 0, 0);
+            else
+                matrix->SetPixel(x_pos + rep.obsNumber, y_pos - (int)std::round((10.00/(maxPres-minPres))*(stoi(rep.pressure)-minPres)), 64, 0, 0);
+        }
+
         sleep(300);
         Weather.UpdateObs();
         Weather.UpdateDaily();
@@ -327,5 +232,7 @@ int main(int argc, char *argv[]) {
     }
 
     return 0;
-
 }
+
+
+

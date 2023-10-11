@@ -1,5 +1,5 @@
 CXXFLAGS=-Wall -O3 -g
-OBJECTS=mxwx.o wx.o
+OBJECTS=mxwx.o wx.o canvas.o
 BINARIES=mxwx
 
 RGB_LIB_DISTRIBUTION=matrix
